@@ -1,10 +1,13 @@
 package com.example.batchprocessing;
 
-import javax.activation.DataSource;
+import javax.sql.DataSource;
 
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.item.database.BeanPropertyItemSqlParameterSourceProvider;
 import org.springframework.batch.item.database.JdbcBatchItemWriter;
 import org.springframework.batch.item.database.builder.JdbcBatchItemWriterBuilder;
@@ -61,9 +64,31 @@ public class BatchConfiguration {
             // (2)パラメータ付きのSQLを実行するためのオブジェクトをセットします
             .itemSqlParameterSourceProvider(new BeanPropertyItemSqlParameterSourceProvider<>())
             // (3) SQL文をセットします
-            .sql("INSERT INTO EMPLOYEES (ID, NAME, DEPARTMENT) VALUES (EMPLOYEE_ID_SEQ.nextval, :name, :department)")
+            .sql("INSERT INTO EMPLOYEES (ID, NAME, DEPARTMENT) VALUES (nextval('employee_id_seq'), :name, :department)")
+            // テキストのSQLをpostgre用に置換 
             // (4) パラメータをセットします
             .dataSource(dataSource)
             .build(); // (5) JdbcBatchItemWriter<Employee>のオブジェクトを生成します
+    }
+    
+    // Step用のメソッドです
+    @Bean
+    public Step step1(JdbcBatchItemWriter<Employee> writer) {
+        return stepBuilderFactory.get("step1") // (1) JobRepositoryにステップ名を登録し、ステップの設定を開始します
+            .<Employee, Employee> chunk(10) // (2) <Inputの型, Outputの型>、何件のデータごとに変更を確定するかを設定します
+            .reader(reader()) // (3) ItemReaderのオブジェクトを指定します
+            .processor(processor()) // (4) ItemProcessorのオブジェクトを指定します
+            .writer(writer) // (5) ItemWriterのオブジェクトを指定します
+            .build(); // (6) Step型のオブジェクトを生成します
+    }
+    
+    // Job用のメソッドです
+    @Bean
+    public Job importEmployeeJob(Step step1) {
+        return jobBuilderFactory.get("importEmployeeJob") // (1) JobRepositoryにジョブ名を登録しジョブの設定を開始します
+            .incrementer(new RunIdIncrementer()) // (2) ジョブの実行IDを内部的にインクリメントするために使います
+            .flow(step1) // (3) Stepを実行します
+            .end() // (4) ジョブを終了します
+            .build(); // (5) Job型のオブジェクトを生成します
     }
 }
